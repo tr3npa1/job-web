@@ -1,0 +1,33 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Frontend
+node_modules/
+dist/
+coverage/
+
+# Local infrastructure and editor files
+.local/
+xampp/
+*.log
+*.pid
+*.sql.bak
+*.zip
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
