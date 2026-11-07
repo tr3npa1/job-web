@@ -203,7 +203,13 @@ class ApiTests(unittest.TestCase):
                 tx.return_value.__enter__.return_value.execute.call_args.args
             )
             self.assertEqual(query.count("%s"), len(values))
-            self.assertEqual(values[2], 24)
+            self.assertEqual(values[1], 24)
+
+    def test_skill_values_are_atomic_and_unique(self):
+        self.assertEqual(
+            r.skills(" SQL,Python, SQL, ,React "), ["Python", "React", "SQL"]
+        )
+        self.assertEqual(r.skills(""), [])
 
     def test_connection_closes_if_cursor_close_fails(self):
         with patch("db.mysql.connector.connect") as connect:

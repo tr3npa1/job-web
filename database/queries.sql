@@ -9,8 +9,8 @@ WHERE j.MinExp <= 3
 ORDER BY j.JobRole;
 
 -- Clients with at least one application.
-SELECT c.CName, c.CEmail
-FROM Client AS c
+SELECT u.name, c.CEmail
+FROM Client AS c JOIN Users AS u ON u.email = c.CEmail
 WHERE EXISTS (SELECT 1 FROM Application AS a WHERE a.CID = c.CID);
 
 -- Jobs with no applications.
@@ -25,10 +25,11 @@ LEFT JOIN Application AS a ON j.JID = a.JID
 GROUP BY j.JID, j.JobRole;
 
 -- Recruiters with multiple postings.
-SELECT r.RID, r.RName, COUNT(j.JID) AS jobs
+SELECT r.RID, u.name, COUNT(j.JID) AS jobs
 FROM Recruiter AS r
+JOIN Users AS u ON u.email = r.REmail
 JOIN Job AS j ON r.RID = j.RID
-GROUP BY r.RID, r.RName
+GROUP BY r.RID, u.name
 HAVING COUNT(j.JID) > 1;
 
 -- Most-applied-to jobs, including ties (MariaDB 10.2+ / MySQL 8+).
@@ -46,8 +47,8 @@ FROM Job
 WHERE Salary > (SELECT AVG(Salary) FROM Job);
 
 -- Relational division: clients who applied to every job, excluding an empty job set.
-SELECT c.CID, c.CName
-FROM Client AS c
+SELECT c.CID, u.name
+FROM Client AS c JOIN Users AS u ON u.email = c.CEmail
 WHERE EXISTS (SELECT 1 FROM Job)
 AND NOT EXISTS (
     SELECT 1 FROM Job AS j
@@ -55,6 +56,17 @@ AND NOT EXISTS (
         SELECT 1 FROM Application AS a WHERE a.CID = c.CID AND a.JID = j.JID
     )
 );
+
+-- Atomic skill values permit exact matching without parsing a list.
+SELECT c.CID, u.name, s.Skill
+FROM ClientSkill AS s
+JOIN Client AS c ON c.CID = s.CID
+JOIN Users AS u ON u.email = c.CEmail
+WHERE s.Skill = 'Python';
+
+-- Reconstruct application ownership without a redundant Application.RID.
+SELECT a.AID, a.CID, a.JID, j.RID
+FROM Application AS a JOIN Job AS j ON j.JID = a.JID;
 
 -- Transactional DML example using a session-local table; real jobs are unchanged.
 CREATE TEMPORARY TABLE JobLab LIKE Job;

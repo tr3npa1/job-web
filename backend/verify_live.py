@@ -86,8 +86,8 @@ def run():
     try:
         assert Browser().request("/health")["database"] == "connected"
         Browser().request("/jobs", status=401)
-        register(owner, "recruiter", "owner")
-        stranger = register(other, "recruiter", "other")
+        recruiter = register(owner, "recruiter", "owner")
+        register(other, "recruiter", "other")
         candidate = register(client, "client", "client")
         register(second, "client", "second")
         job = dict(
@@ -130,16 +130,62 @@ def run():
                 if not cur.nextset():
                     break
         print(f"PASS: demonstration SQL ({statements} statements), view with live data")
-        # Both optional triggers reject invalid recruiter ownership.
+        # Constraints protect direct SQL writers, independently of the API.
+        for sql, values, expected in [
+            (
+                "INSERT INTO Application (JID,CID) VALUES (%s,%s)",
+                (jid, candidate["profile"]["CID"]),
+                1062,
+            ),
+            (
+                "INSERT INTO Application (JID,CID) VALUES (%s,%s)",
+                (-1, candidate["profile"]["CID"]),
+                1452,
+            ),
+        ]:
+            try:
+                with transaction() as cur:
+                    cur.execute(sql, values)
+            except mysql.connector.Error as error:
+                assert error.errno == expected
+            else:
+                raise AssertionError("Database constraint did not reject invalid data")
+        with transaction() as cur:
+            cur.execute(
+                "SELECT Skill FROM ClientSkill WHERE CID=%s ORDER BY Skill",
+                (candidate["profile"]["CID"],),
+            )
+            assert [row["Skill"] for row in cur.fetchall()] == ["Python", "SQL"]
+            for table, removed in [
+                ("Application", "RID"),
+                ("Client", "CSkills"),
+                ("Client", "CName"),
+                ("Recruiter", "RName"),
+            ]:
+                cur.execute(
+                    "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s AND COLUMN_NAME=%s",
+                    (table, removed),
+                )
+                assert cur.fetchone() is None, (table, removed)
+        # All five role guards reject mismatched profiles or role changes.
         for sql, values in [
             (
-                "INSERT INTO Application (RID,JID,CID) VALUES (%s,%s,%s)",
-                (stranger["profile"]["RID"], jid, candidate["profile"]["CID"]),
+                "INSERT INTO Recruiter (REmail,CompanyName,CompanyLocation,RGender) VALUES (%s,'QA','Pune','M')",
+                (candidate["email"],),
             ),
             (
-                "UPDATE Application SET RID=%s WHERE AID=%s",
-                (stranger["profile"]["RID"], aid),
+                "INSERT INTO Client (CEmail,CAge,CLocation,CGender,CExp,CQualification) VALUES (%s,24,'Pune','M',0,'BE')",
+                (recruiter["email"],),
             ),
+            (
+                "UPDATE Recruiter SET REmail=%s WHERE RID=%s",
+                (candidate["email"], recruiter["profile"]["RID"]),
+            ),
+            (
+                "UPDATE Client SET CEmail=%s WHERE CID=%s",
+                (recruiter["email"], candidate["profile"]["CID"]),
+            ),
+            ("UPDATE Users SET type='Recruiter' WHERE email=%s", (candidate["email"],)),
         ]:
             try:
                 with transaction() as cur:
@@ -147,7 +193,7 @@ def run():
             except mysql.connector.Error as error:
                 assert error.errno == 1644
             else:
-                raise AssertionError("Ownership trigger did not reject invalid data")
+                raise AssertionError("Role trigger did not reject invalid data")
         client.request(f"/applications/{aid}", "DELETE")
 
         # Simultaneous submissions via independent HTTP sessions.
@@ -183,43 +229,38 @@ def run():
                 "SELECT password FROM Users WHERE email=%s", (candidate["email"],)
             )
             assert cur.fetchone()["password"].startswith("scrypt:")
-        # A profile conflict must roll back the preceding Users insert.
+        # A failure after multiple writes rolls back the whole transaction.
         orphan = f"{TAG}orphan@example.test"
         fixtures.append(orphan)
-        with transaction() as cur:
-            cur.execute(
-                "INSERT INTO Recruiter (RName,REmail,CompanyName,CompanyLocation,RGender) VALUES (%s,%s,%s,%s,%s)",
-                ("QA", orphan, "QA", "Pune", "M"),
-            )
-        Browser().request(
-            "/register",
-            "POST",
-            dict(
-                name="QA",
-                email=orphan,
-                password=PASSWORD,
-                confirm=PASSWORD,
-                type="recruiter",
-                gender="M",
-                company="QA",
-                location="Pune",
-            ),
-            409,
-        )
+        try:
+            with transaction() as cur:
+                cur.execute(
+                    "INSERT INTO Users (name,email,type,password) VALUES ('QA',%s,'Recruiter','test-only')",
+                    (orphan,),
+                )
+                cur.execute(
+                    "INSERT INTO Recruiter (REmail,CompanyName,CompanyLocation,RGender) VALUES (%s,'QA','Pune','M')",
+                    (orphan,),
+                )
+                raise RuntimeError("Intentional rollback check")
+        except RuntimeError as error:
+            assert str(error) == "Intentional rollback check"
         with transaction() as cur:
             cur.execute("SELECT email FROM Users WHERE email=%s", (orphan,))
+            assert cur.fetchone() is None
+            cur.execute("SELECT RID FROM Recruiter WHERE REmail=%s", (orphan,))
             assert cur.fetchone() is None
         print(
             "PASS: registration, login/logout, role/ownership isolation, posting, browsing, application, withdrawal, deletion"
         )
         print(
-            "PASS: concurrent duplicate prevention, legacy password migration, registration rollback, both triggers"
+            "PASS: concurrent duplicate prevention, database uniqueness, foreign keys, atomic skills, legacy password migration, rollback, five role triggers"
         )
     finally:
         with transaction() as cur:
             for email in fixtures:
                 cur.execute(
-                    "DELETE a FROM Application a LEFT JOIN Recruiter r ON a.RID=r.RID LEFT JOIN Client c ON a.CID=c.CID WHERE r.REmail=%s OR c.CEmail=%s",
+                    "DELETE a FROM Application a JOIN Job j ON a.JID=j.JID LEFT JOIN Recruiter r ON j.RID=r.RID LEFT JOIN Client c ON a.CID=c.CID WHERE r.REmail=%s OR c.CEmail=%s",
                     (email, email),
                 )
                 cur.execute(

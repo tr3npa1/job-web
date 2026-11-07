@@ -107,7 +107,7 @@ export default function Auth({ onLogin, initialError = "" }) {
               label="Email address"
               type="email"
               autoComplete="email"
-              maxLength={register ? 45 : 120}
+              maxLength={120}
             />
             <div className={register ? "form-grid" : ""}>
               <Field

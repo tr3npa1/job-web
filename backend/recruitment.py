@@ -1,13 +1,23 @@
 """Adapted from the original register/client/recruiter SQL workflows (see LICENSE).
 
-Tkinter state is replaced by explicit arguments. Original joins and deletion order
-are retained; parameterization, ownership checks and transactions are added.
+Tkinter state is replaced by explicit arguments. The normalized schema retains
+the workflows and response fields through joins, aliases and transactions.
 """
 
 import hmac
 import re
 from werkzeug.security import generate_password_hash, check_password_hash
 from db import transaction
+
+
+def skills(value):
+    """The form accepts comma-separated skills; storage contains one skill per row."""
+    return sorted({item.strip() for item in value.split(",") if item.strip()})
+
+
+CLIENT_COLUMNS = """c.*, u.name AS CName,
+    COALESCE((SELECT GROUP_CONCAT(s.Skill ORDER BY s.Skill SEPARATOR ', ')
+              FROM ClientSkill s WHERE s.CID=c.CID), '') AS CSkills"""
 
 
 class Problem(Exception):
@@ -51,10 +61,16 @@ def profile(cur, email):
         raise Problem(
             "Account role is invalid. Contact the database administrator.", 409
         )
-    table, column = (
-        ("Recruiter", "REmail") if user["type"] == "recruiter" else ("Client", "CEmail")
-    )
-    cur.execute(f"SELECT * FROM {table} WHERE {column}=%s", (email,))
+    if user["type"] == "recruiter":
+        cur.execute(
+            "SELECT r.*,u.name AS RName FROM Recruiter r JOIN Users u ON u.email=r.REmail WHERE r.REmail=%s",
+            (email,),
+        )
+    else:
+        cur.execute(
+            f"SELECT {CLIENT_COLUMNS} FROM Client c JOIN Users u ON u.email=c.CEmail WHERE c.CEmail=%s",
+            (email,),
+        )
     user["profile"] = cur.fetchone()
     if not user["profile"]:
         raise Problem(
@@ -64,7 +80,7 @@ def profile(cur, email):
 
 
 def register(data):
-    name, email = string(data, "name"), string(data, "email")
+    name, email = string(data, "name"), string(data, "email", 120)
     if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
         raise Problem("Enter a valid email address.")
     password = string(data, "password", 256)
@@ -75,26 +91,31 @@ def register(data):
         raise Problem("Choose a valid role and gender.")
     location = string(data, "location")
     if role == "recruiter":
-        values = (name, email, string(data, "company"), location, gender)
-        query = "INSERT INTO Recruiter (RName,REmail,CompanyName,CompanyLocation,RGender) VALUES (%s,%s,%s,%s,%s)"
+        values = (email, string(data, "company"), location, gender)
+        query = "INSERT INTO Recruiter (REmail,CompanyName,CompanyLocation,RGender) VALUES (%s,%s,%s,%s)"
     else:
         values = (
-            name,
             email,
             number(data, "age", 1, 150),
             location,
             gender,
             number(data, "experience"),
-            string(data, "skills", optional=True),
             string(data, "qualification", optional=True),
         )
-        query = "INSERT INTO Client (CName,CEmail,CAge,CLocation,CGender,CExp,CSkills,CQualification) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)"
+        client_skills = skills(string(data, "skills", optional=True))
+        query = "INSERT INTO Client (CEmail,CAge,CLocation,CGender,CExp,CQualification) VALUES (%s,%s,%s,%s,%s,%s)"
     with transaction() as cur:
         cur.execute(
             "INSERT INTO Users (name,email,type,password) VALUES (%s,%s,%s,%s)",
             (name, email, role.title(), generate_password_hash(password)),
         )
         cur.execute(query, values)
+        if role == "client" and client_skills:
+            cid = cur.lastrowid
+            cur.executemany(
+                "INSERT INTO ClientSkill (CID,Skill) VALUES (%s,%s)",
+                [(cid, skill) for skill in client_skills],
+            )
         return profile(cur, email)
 
 
@@ -182,15 +203,16 @@ def applications(user):
     with transaction() as cur:
         if user["type"] == "recruiter":
             cur.execute(
-                """SELECT a.AID,j.JobRole,c.* FROM Application a
-                JOIN Client c ON a.CID=c.CID JOIN Job j ON a.JID=j.JID
+                f"""SELECT a.AID,j.JobRole,{CLIENT_COLUMNS} FROM Application a
+                JOIN Client c ON a.CID=c.CID JOIN Users u ON u.email=c.CEmail
+                JOIN Job j ON a.JID=j.JID
                 WHERE j.RID=%s ORDER BY a.AID DESC""",
                 (user["profile"]["RID"],),
             )
         else:
             cur.execute(
                 """SELECT a.AID,j.*,r.CompanyName,r.CompanyLocation FROM Application a
-                JOIN Recruiter r ON a.RID=r.RID JOIN Job j ON a.JID=j.JID
+                JOIN Job j ON a.JID=j.JID JOIN Recruiter r ON j.RID=r.RID
                 WHERE a.CID=%s ORDER BY a.AID DESC""",
                 (user["profile"]["CID"],),
             )
@@ -212,8 +234,8 @@ def apply(user, jid):
         if cur.fetchone():
             raise Problem("You have already applied to this job.", 409)
         cur.execute(
-            "INSERT INTO Application (RID,JID,CID) VALUES (%s,%s,%s)",
-            (job["RID"], jid, cid),
+            "INSERT INTO Application (JID,CID) VALUES (%s,%s)",
+            (jid, cid),
         )
         return cur.lastrowid
 

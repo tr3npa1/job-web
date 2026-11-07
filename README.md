@@ -1,15 +1,16 @@
 # job-web
 
-A recruitment management application built with React, Flask, and XAMPP MariaDB. The project migrates a desktop recruitment system to a web interface while retaining its database entities and recruiter/client workflows. It is intended for local development and university DBMS evaluation.
+A recruitment management application built with React, Flask, and XAMPP MariaDB. The project migrates a desktop recruitment system to a web interface while retaining its recruiter/client workflows and normalizing the recruitment schema to BCNF. It is intended for local development and university DBMS evaluation.
 
 ## Features
 
 - Recruiter and client registration, sign-in, and sign-out.
 - Recruiter-owned job postings and applicant lists.
 - Job browsing, text search, employment-type filters, and sorting.
-- Application submission, duplicate prevention, and withdrawal.
+- Application submission, database-enforced duplicate prevention, and withdrawal.
+- Six normalized tables with atomic skills, account/profile foreign keys and shared account names.
 - Transactional registration and job deletion.
-- Recruitment SQL examples covering joins, aggregates, subqueries, CTEs, views, and optional integrity triggers.
+- Recruitment SQL examples covering joins, aggregates, subqueries, CTEs, views, and role-integrity triggers.
 
 ## Technology
 
@@ -28,7 +29,7 @@ Browser / React → Vite API proxy → Flask → mysql.connector → XAMPP Maria
 
 The supported setup uses Windows, PowerShell, Python 3.11+, Node.js 22.12+ or 24 LTS, and XAMPP with MariaDB 10.4+. Run the following commands from the repository root.
 
-1. Start MySQL and Apache in XAMPP. In phpMyAdmin, import `database/schema.sql`, followed by `database/views.sql`. Back up an existing `mydb` before importing. Triggers are optional for normal use and required for the complete integration test.
+1. Start MySQL and Apache in XAMPP. For a **new database**, import `database/schema.sql`, `database/views.sql`, and `database/triggers.sql` in that order through phpMyAdmin. For an existing installation, follow the backed-up migration in [Setup](docs/SETUP.md#upgrading-an-existing-database) instead of importing over old tables.
 2. Install dependencies:
 
    ```powershell
@@ -68,7 +69,7 @@ npm.cmd --prefix frontend test
 npm.cmd --prefix frontend run build
 ```
 
-With Flask, Vite, and a development database running, and the view and optional triggers installed:
+With Flask, Vite, and a development database running, and the view and all five triggers installed:
 
 ```powershell
 backend/.venv/Scripts/python backend/verify_live.py
@@ -79,9 +80,9 @@ The live check creates uniquely named test records, exercises real HTTP and SQL 
 ## Repository layout
 
 ```text
-backend/     Flask routes, database access, recruitment logic, tests and launcher
+backend/     Flask routes, database access, recruitment logic, migration, tests and launcher
 frontend/    React source, static assets, package manifest and lockfile
-database/   Schema, recruitment queries, view and optional triggers
+database/    Schema, recruitment queries, view and role-integrity triggers
 docs/       Architecture, features and setup documentation
 README.md
 LICENSE
@@ -101,4 +102,4 @@ The source application has no resume uploads, application statuses, date fields,
 
 ## License and attribution
 
-Distributed under the [MIT License](LICENSE). Adapted from [RaghavGupta2910/Hire-Me-Recruitment-Management-System](https://github.com/RaghavGupta2910/Hire-Me-Recruitment-Management-System), copyright © 2025 Raghav Gupta. The web implementation preserves the original recruitment tables and workflows; parameterized queries, sessions, password hashing, and transaction checks replace the desktop application's presentation-bound operations. `database/schema.sql` is the maintained schema definition.
+Distributed under the [MIT License](LICENSE). Adapted from [RaghavGupta2910/Hire-Me-Recruitment-Management-System](https://github.com/RaghavGupta2910/Hire-Me-Recruitment-Management-System), copyright © 2025 Raghav Gupta. The web implementation preserves the original recruitment workflows. Normalization removes redundant ownership/name columns and introduces ClientSkill; the supplied migration retains existing records and IDs. Parameterized queries, sessions, password hashing, and transactions replace the desktop application's presentation-bound operations. `database/schema.sql` is the maintained schema definition.

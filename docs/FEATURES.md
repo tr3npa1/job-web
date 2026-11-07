@@ -2,9 +2,9 @@
 
 ## Accounts
 
-Both recruiters and clients can register, sign in, and sign out. Sessions persist across page refreshes and expire after eight hours without activity. Registration requires a name, email, password confirmation, gender, and location. Recruiters also provide a company name. Clients provide age and experience; qualification and skills are optional.
+Both recruiters and clients can register, sign in, and sign out. Sessions persist across page refreshes and expire after eight hours without activity. Registration requires a name, email, password confirmation, gender, and location. Recruiters also provide a company name. Clients provide age and experience; qualification and skills are optional. Email addresses support up to 120 characters. Skills are entered as comma-separated text and stored as distinct, trimmed values in ClientSkill; display order is alphabetical.
 
-Server validation checks required fields, schema length limits, valid roles, numeric ranges, duplicate emails, and password confirmation. The source's gender choices (`M`, `F`) and employment types (`FullTime`, `PartTime`, `Intern`) are retained. New passwords are hashed. Existing plaintext credentials are upgraded after a successful login.
+Server validation checks required fields, schema length limits, valid roles, numeric ranges, duplicate emails, and password confirmation. The source's gender choices (`M`, `F`) and employment types (`FullTime`, `PartTime`, `Intern`) are retained. Names are stored once in Users and joined into role profiles. New passwords are hashed. Existing plaintext credentials are upgraded after a successful login.
 
 ## Recruiters
 
@@ -18,7 +18,7 @@ Recruiters cannot submit applications or access another recruiter's applicant li
 ## Clients
 
 - Browse jobs with company names, locations, qualifications, experience requirements, and salary.
-- Submit one application per job. The UI marks submitted jobs as Applied, and the API rejects repeat submissions.
+- Submit one application per job. The UI marks submitted jobs as Applied, and the API rejects repeat submissions. A unique client/job database constraint also prevents duplicates from direct SQL writes.
 - List and withdraw their own applications after confirmation.
 - Apply again after withdrawing an application.
 
@@ -32,4 +32,4 @@ The interface provides loading indicators, empty and filtered-empty states, succ
 
 ## Scope boundaries
 
-Job editing, hiring statuses, notifications, resumes, profile editing, password recovery, and application timestamps are not implemented. Salary is a numeric amount without a currency or time-period field. Skills remain a comma-separated string. SQL examples and optional triggers are database resources, not additional UI modules.
+Job editing, hiring statuses, notifications, resumes, profile editing, password recovery, and application timestamps are not implemented. Salary is a numeric amount without a currency or time-period field. The form accepts comma-separated skills; storage is normalized to one row per individual skill. SQL examples and role-integrity triggers are database resources, not additional UI modules.
